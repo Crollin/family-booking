@@ -18,38 +18,51 @@ sont vides.
 
 ### `PUBLIC_URL`
 
-L'unique adresse par laquelle l'application est jointe. L'interface, l'API et les
-services Supabase passent tous par elle.
+Adresse de l'**interface** (ce que vous tapez dans le navigateur). Elle sert aussi aux
+liens des e-mails et doit être déclarée comme Site URL dans Supabase Auth.
 
-Elle doit correspondre **exactement** à ce que vous tapez dans le navigateur, protocole
-et port compris. Une divergence provoque des échecs de connexion, car les cookies de
-session sont rejetés.
+En **pile complète**, le proxy nginx expose app + Supabase sous cette même origine : le
+navigateur joint donc Supabase via `PUBLIC_URL`.
+
+En **mode app seule**, `PUBLIC_URL` est uniquement l'app ; l'API Supabase se configure
+avec `SUPABASE_URL` (ci-dessous).
+
+Elle doit correspondre **exactement** à l'URL du navigateur, protocole et port compris.
+Une divergence provoque des échecs de connexion (cookies de session rejetés).
 
 ```bash
 PUBLIC_URL=http://localhost:3000            # en local
 PUBLIC_URL=https://reservations.exemple.fr  # en production
 ```
 
-Cette valeur alimente `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SITE_URL` dans le
-conteneur applicatif, ainsi que les liens contenus dans les e-mails.
+### `SUPABASE_URL`
+
+URL publique de l'API Supabase (`https://….supabase.co` ou votre instance).
+
+- **Pile complète** : laissez vide — l'app réutilise `PUBLIC_URL` (origine unique).
+- **App seule** (`docker-compose.app.yml`) : **obligatoire**.
+
+### `SUPABASE_INTERNAL_URL`
+
+URL utilisée **par le serveur** Next pour joindre Supabase. Utile si le conteneur n'a
+pas accès à `SUPABASE_URL` / `PUBLIC_URL` (réseau Docker privé, VPC). En pile complète,
+la valeur est fixée à `http://proxy`. En mode app seule, laissez vide sauf besoin
+particulier : le serveur utilisera alors `SUPABASE_URL`.
 
 ### `APP_PORT`
 
 Le port publié sur la machine hôte, `3000` par défaut. Changez-le si ce port est déjà
-occupé, et reportez le changement dans `PUBLIC_URL`.
-
-Derrière un reverse proxy qui termine le HTTPS, `APP_PORT` reste le port interne sur
-lequel votre proxy se branche, tandis que `PUBLIC_URL` porte l'adresse publique en
-`https://`.
+occupé, et reportez le changement dans `PUBLIC_URL` (pile complète) ou dans la conf de
+votre reverse proxy (mode app seule).
 
 ### `APP_UPSTREAM`
 
-Ce que le proxy interne doit contacter pour joindre l'application. La valeur par défaut,
-`app:3000`, désigne le conteneur applicatif et convient à toute installation normale.
+Ce que le proxy interne (pile complète) doit contacter pour joindre l'application. La
+valeur par défaut, `app:3000`, convient à toute installation normale.
 
 Elle ne sert qu'en développement, pour viser un serveur `npm run dev` lancé sur la
-machine hôte plutôt que le conteneur : `APP_UPSTREAM=host.docker.internal:3001`. La
-marche à suivre complète est dans le README, section « Développer ».
+machine hôte : `APP_UPSTREAM=host.docker.internal:3001`. Voir le README, section
+« Développer ».
 
 ---
 

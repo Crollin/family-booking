@@ -20,6 +20,9 @@
 #   storage-init tâche ponctuelle : crée les buckets et leurs règles d'accès
 #
 # Pour repartir d'une base vierge : docker compose down -v
+#
+# Déjà un Supabase / un proxy ? Utilisez plutôt docker-compose.app.yml
+# (voir README, section « Déjà un Supabase »).
 # =============================================================================
 
 name: family-booking

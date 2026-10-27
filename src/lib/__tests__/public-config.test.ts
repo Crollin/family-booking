@@ -102,7 +102,18 @@ describe('public-config', () => {
   it('retire la barre oblique finale de PUBLIC_URL', () => {
     process.env.PUBLIC_URL = 'https://app.example.com/'
     process.env.ANON_KEY = 'anon-key'
+    delete process.env.SUPABASE_URL
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL
 
     expect(getPublicConfig().supabaseUrl).toBe('https://app.example.com')
+  })
+
+  it('utilise SUPABASE_URL quand elle diffère de PUBLIC_URL (mode app seule)', () => {
+    process.env.PUBLIC_URL = 'https://reservations.example.com'
+    process.env.SUPABASE_URL = 'https://abcdefgh.supabase.co'
+    process.env.ANON_KEY = 'anon-key'
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL
+
+    expect(getPublicConfig().supabaseUrl).toBe('https://abcdefgh.supabase.co')
   })
 })

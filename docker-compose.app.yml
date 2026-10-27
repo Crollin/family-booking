@@ -1,0 +1,73 @@
+# =============================================================================
+# family-booking — application seule
+# =============================================================================
+#
+# À utiliser si vous avez déjà un projet Supabase (cloud ou self-host) et,
+# éventuellement, votre propre reverse proxy.
+#
+#   1. Appliquer le schéma SQL sur votre projet (voir README)
+#   2. Renseigner PUBLIC_URL, SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY
+#   3. docker compose -f docker-compose.app.yml up -d --build
+#
+# La pile complète (proxy + db + auth + …) reste dans docker-compose.yml.
+# =============================================================================
+
+name: family-booking-app
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      # URL de l'interface (liens e-mails, Site URL Auth côté Supabase).
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      # URL publique de l'API Supabase (projet cloud ou instance existante).
+      SUPABASE_URL: ${SUPABASE_URL:?renseignez SUPABASE_URL dans .env}
+      # Optionnel : URL joignable depuis le conteneur si différente de SUPABASE_URL.
+      SUPABASE_INTERNAL_URL: ${SUPABASE_INTERNAL_URL:-}
+
+      SITE_NAME: ${SITE_NAME:-Family Lodge}
+      SITE_TAGLINE: ${SITE_TAGLINE:-Réservations familiales partagées}
+      PROPERTY_LAT: ${PROPERTY_LAT:-45.0}
+      PROPERTY_LNG: ${PROPERTY_LNG:-6.0}
+
+      ANON_KEY: ${ANON_KEY:?renseignez ANON_KEY dans .env}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?renseignez SERVICE_ROLE_KEY dans .env}
+
+      NODE_ENV: production
+      CRON_SECRET: ${CRON_SECRET:-}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_FROM: ${SMTP_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-auto}
+      PLATFORM_OWNER_EMAILS: ${PLATFORM_OWNER_EMAILS:-}
+
+      WEATHER_API_KEY: ${WEATHER_API_KEY:-}
+      WEATHER_LOCATION: ${WEATHER_LOCATION:-}
+      WEATHER_LATITUDE: ${WEATHER_LATITUDE:-}
+      WEATHER_LONGITUDE: ${WEATHER_LONGITUDE:-}
+      WEATHER_ELEVATION: ${WEATHER_ELEVATION:-}
+
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      BASIC_AUTH_ENABLED: ${BASIC_AUTH_ENABLED:-false}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-}
+      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s

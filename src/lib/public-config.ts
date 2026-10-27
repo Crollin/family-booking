@@ -8,7 +8,7 @@
  * domaine en ne changeant que le fichier .env.
  */
 
-import { getAnonKey, getPublicUrl, getTurnstileSiteKey } from './runtime-env'
+import { getAnonKey, getSupabasePublicUrl, getTurnstileSiteKey } from './runtime-env'
 import { getSiteName, getSiteTagline } from './site-branding'
 
 export const PUBLIC_CONFIG_ELEMENT_ID = '__family_booking_config__'
@@ -24,7 +24,7 @@ export type PublicConfig = {
 /** Lit la configuration depuis l'environnement du processus serveur. */
 export function getPublicConfig(): PublicConfig {
   return {
-    supabaseUrl: getPublicUrl(),
+    supabaseUrl: getSupabasePublicUrl(),
     supabaseAnonKey: getAnonKey(),
     turnstileSiteKey: getTurnstileSiteKey(),
     siteName: getSiteName(),

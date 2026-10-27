@@ -7,13 +7,16 @@ local et météo du logement.
 Le nom du site, le logo et les coordonnées du logement se personnalisent dans `.env`
 (voir [Personnaliser](#personnaliser-nom-logos-coordonnées)).
 
-Tout le nécessaire — application, base de données, authentification, stockage des
-photos — est fourni dans une seule pile Docker. Il n'y a ni compte à créer chez un
-hébergeur, ni migration à appliquer à la main.
+Deux modes de déploiement :
+
+1. **Pile complète** (`docker-compose.yml`) — app + Supabase + proxy : rien à
+   provisionner ailleurs.
+2. **App seule** (`docker-compose.app.yml`) — si vous avez déjà un projet Supabase
+   (et éventuellement un reverse proxy).
 
 ---
 
-## Démarrage
+## Démarrage (pile complète)
 
 Prérequis : [Docker](https://docs.docker.com/get-docker/) avec le plugin Compose
 (`docker compose version` doit répondre).
@@ -41,7 +44,43 @@ docker compose logs -f  # journaux en direct
 
 ---
 
-## Ce que contient la pile
+## Déjà un Supabase (ou un proxy) ? — mode app seule
+
+Utilisez `docker-compose.app.yml` : un seul conteneur, le vôtre pour le reste.
+
+1. **Schéma** — dans le SQL Editor de votre projet (ou `psql`), exécutez dans l’ordre :
+   - `docker/db/init/02-schema.sql`
+   - `docker/db/init/04-storage.sql` (buckets photos)
+   - optionnel : `docker/db/init/03-seed-guide-local.sql`
+2. **Auth** — dans Supabase → Authentication → URL Configuration :
+   - Site URL = votre `PUBLIC_URL`
+   - Redirect URLs = `PUBLIC_URL/**` (ex. `https://reservations.exemple.fr/**`)
+3. **`.env`** — au minimum :
+
+```bash
+PUBLIC_URL=https://reservations.exemple.fr   # URL de l'interface
+SUPABASE_URL=https://xxxxxxxx.supabase.co    # URL API du projet
+ANON_KEY=…                                   # Project Settings → API
+SERVICE_ROLE_KEY=…                           # idem (secret serveur)
+CRON_SECRET=…                                # chaîne aléatoire
+```
+
+`SUPABASE_INTERNAL_URL` n’est utile que si le conteneur doit joindre Supabase via
+une adresse privée différente de `SUPABASE_URL`.
+
+4. **Lancer**
+
+```bash
+docker compose -f docker-compose.app.yml up -d --build
+```
+
+L’app écoute sur `APP_PORT` (3000 par défaut). Placez votre reverse proxy (Traefik,
+Caddy, nginx, Coolify…) devant ce port et terminez le HTTPS chez lui. Ne démarrez
+**pas** `docker-compose.yml` en parallèle : vous auriez deux piles concurrentes.
+
+---
+
+## Ce que contient la pile complète
 
 Sept conteneurs, un seul port publié sur votre machine. Le service `proxy` est le point
 d'entrée : il reçoit toutes les requêtes et les distribue, ce qui permet à l'application
@@ -178,20 +217,21 @@ touche donc pas à vos données.
 
 ```
 family-booking/
-├── docker-compose.yml     # la pile complète — tout part d'ici
-├── Dockerfile             # construction de l'image applicative
-├── .env.example           # configuration à copier en .env
+├── docker-compose.yml      # pile complète (app + Supabase + proxy)
+├── docker-compose.app.yml  # app seule (Supabase déjà fourni)
+├── Dockerfile              # construction de l'image applicative
+├── .env.example            # configuration à copier en .env
 ├── docker/
-│   ├── db/init/           # schéma SQL appliqué au premier démarrage
-│   └── proxy/             # configuration nginx du point d'entrée
+│   ├── db/init/            # schéma SQL (init pile complète, ou SQL Editor)
+│   └── proxy/              # nginx du point d'entrée (pile complète)
 ├── scripts/
 │   └── generate-secrets.sh
 ├── src/
-│   ├── app/               # pages et routes d'API (Next.js App Router)
-│   ├── components/        # composants React
-│   ├── lib/               # accès aux données, e-mails, météo
-│   └── types/             # types TypeScript
-└── docs/CONFIGURATION.md  # référence des variables d'environnement
+│   ├── app/                # pages et routes d'API (Next.js App Router)
+│   ├── components/         # composants React
+│   ├── lib/                # accès aux données, e-mails, météo
+│   └── types/              # types TypeScript
+└── docs/CONFIGURATION.md   # référence des variables d'environnement
 ```
 
 ---

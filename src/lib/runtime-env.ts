@@ -16,15 +16,28 @@ const trimmed = (value: string | undefined) => value?.trim() || ''
 const stripTrailingSlash = (url: string) => url.replace(/\/+$/, '')
 
 /**
- * Adresse publique de l'application. L'application et Supabase partageant la
- * même origine, elle sert aussi bien aux liens des e-mails qu'aux appels que le
- * navigateur adresse à Supabase.
+ * Adresse publique de l'application (liens e-mails, cookies, Site URL Auth).
+ * En pile complète, elle coïncide avec l'origine Supabase (proxy unique).
+ * En mode app seule, elle pointe vers Next ; Supabase a alors sa propre URL.
  */
 export function getPublicUrl(): string {
   return stripTrailingSlash(
     trimmed(process.env.PUBLIC_URL) ||
       trimmed(process.env.NEXT_PUBLIC_SITE_URL) ||
       trimmed(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  )
+}
+
+/**
+ * URL publique de l'API Supabase (Auth, REST, Realtime, Storage) pour le
+ * navigateur. Défaut : même origine que `PUBLIC_URL` (pile Docker complète).
+ * Avec un projet Supabase déjà existant : renseigner `SUPABASE_URL`.
+ */
+export function getSupabasePublicUrl(): string {
+  return stripTrailingSlash(
+    trimmed(process.env.SUPABASE_URL) ||
+      trimmed(process.env.NEXT_PUBLIC_SUPABASE_URL) ||
+      getPublicUrl()
   )
 }
 
@@ -48,10 +61,11 @@ export function getTurnstileSiteKey(): string | null {
 }
 
 /**
- * Adresse par laquelle le serveur joint Supabase. Depuis un conteneur,
- * l'adresse publique n'est pas nécessairement résolvable : le proxy interne
- * offre alors un chemin direct.
+ * Adresse par laquelle le serveur joint Supabase. Priorité à
+ * `SUPABASE_INTERNAL_URL` (réseau Docker / VPC), sinon l'URL publique Supabase.
  */
 export function getSupabaseServerUrl(): string {
-  return stripTrailingSlash(trimmed(process.env.SUPABASE_INTERNAL_URL)) || getPublicUrl()
+  return (
+    stripTrailingSlash(trimmed(process.env.SUPABASE_INTERNAL_URL)) || getSupabasePublicUrl()
+  )
 }
