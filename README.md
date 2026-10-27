@@ -307,6 +307,14 @@ Attention, cette commande efface définitivement les données.
 
 ---
 
+## Crédits
+
+Projet créé par [Crollin](https://github.com/Crollin) — [creactiveweb.com](https://creactiveweb.com).
+
+Détails : [CREDITS.md](CREDITS.md).
+
+---
+
 ## Licence
 
 Projet destiné à un usage familial. Ajoutez le fichier de licence de votre choix
