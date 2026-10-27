@@ -1,0 +1,7 @@
+<svg width="576" height="576" viewBox="0 0 576 576" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Family Lodge">
+  <g fill="none" stroke="#336FB1" stroke-width="28" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M96 288L288 120l192 168" />
+    <path d="M144 256v200h288V256" />
+    <path d="M248 456V344h80v112" />
+  </g>
+</svg>

@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'cursor/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      # Next.js 16+ : `next lint` n'existe plus — ESLint CLI directement
+      - run: npx eslint .
+      - run: npm test
+      # La configuration publique est injectée au rendu, pas à la construction :
+      # le build n'a besoin d'aucune variable d'environnement.
+      - run: npm run build

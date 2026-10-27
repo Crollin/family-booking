@@ -1,0 +1,56 @@
+# =============================================================================
+# family-booking — point d'entrée unique
+# =============================================================================
+# Tout passe par cette origine : l'application Next.js et les services Supabase.
+# Le navigateur n'a donc qu'une seule URL à connaître, ce qui évite d'avoir à
+# assouplir la Content-Security-Policy ou à gérer du CORS.
+#
+# ${APP_UPSTREAM} est substitué au démarrage par l'image nginx :
+#   app:3000                    — pile complète (défaut)
+#   host.docker.internal:3000   — développement, avec `npm run dev` sur la machine
+# =============================================================================
+
+server {
+    listen 80;
+    server_name _;
+
+    # Aligné sur la limite d'envoi de fichiers de l'application (20 Mo).
+    client_max_body_size 25m;
+
+    # L'application génère des liens absolus à partir de ces en-têtes.
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    proxy_http_version 1.1;
+
+    location /auth/v1/ {
+        proxy_pass http://auth:9999/;
+    }
+
+    location /rest/v1/ {
+        proxy_pass http://rest:3000/;
+    }
+
+    location /storage/v1/ {
+        # Storage reconstruit les URL publiques à partir du chemin d'origine.
+        proxy_set_header X-Forwarded-Path /storage/v1;
+        proxy_pass http://storage:5000/;
+    }
+
+    # Realtime déduit son locataire du sous-domaine appelé : l'en-tête Host doit
+    # rester celui du conteneur, d'où l'absence de $host ici.
+    location /realtime/v1/ {
+        proxy_set_header Host realtime-dev.supabase-realtime;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+        proxy_pass http://realtime-dev.supabase-realtime:4000/socket/;
+    }
+
+    location / {
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass http://${APP_UPSTREAM};
+    }
+}

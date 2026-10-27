@@ -1,0 +1,58 @@
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.next
+out
+.vercel
+
+# Environment files
+.env
+.env*.local
+.env.local
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+*.md
+docs
+
+# Testing
+coverage
+.nyc_output
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+e2e
+playwright-report
+test-results
+
+# Infrastructure — utilisée par docker compose, pas par l'image
+docker
+docker-compose.yml
+scripts
+
+# Misc
+*.pem
+.cache
+dist
+build

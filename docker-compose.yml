@@ -1,0 +1,309 @@
+# =============================================================================
+# family-booking — pile complète
+# =============================================================================
+#
+#   cp .env.example .env
+#   docker compose up -d
+#
+# L'application est ensuite disponible sur l'adresse PUBLIC_URL de votre .env
+# (http://localhost:3000 par défaut).
+#
+# Sept conteneurs, un seul port publié :
+#
+#   proxy        point d'entrée unique, répartit vers l'app et les services Supabase
+#   app          l'application Next.js
+#   db           PostgreSQL — applique le schéma au tout premier démarrage
+#   auth         Supabase Auth (GoTrue) — comptes, sessions, mots de passe
+#   rest         PostgREST — API de données, soumise au Row Level Security
+#   realtime     Supabase Realtime — mise à jour live du calendrier
+#   storage      Supabase Storage — photos du livre d'or et du guide local
+#   storage-init tâche ponctuelle : crée les buckets et leurs règles d'accès
+#
+# Pour repartir d'une base vierge : docker compose down -v
+# =============================================================================
+
+name: family-booking
+
+services:
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:80"
+    volumes:
+      - ./docker/proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./docker/proxy/upstream.conf:/etc/nginx/conf.d/00-upstream.conf:ro
+    environment:
+      # `app:3000` en pile complète ; `host.docker.internal:3000` en développement.
+      APP_UPSTREAM: ${APP_UPSTREAM:-app:3000}
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/conf.d
+    # Permet de viser un `npm run dev` lancé sur la machine hôte ; sous Linux,
+    # ce nom n'est pas résolu sans cette déclaration.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      app:
+        condition: service_started
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_started
+      storage:
+        condition: service_healthy
+      realtime:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Adresse par laquelle le navigateur joint l'application ET Supabase :
+      # même origine, donc une seule valeur.
+      #
+      # Ces noms ne portent pas le préfixe NEXT_PUBLIC_ à dessein : Next.js
+      # remplacerait alors leur valeur au moment du build, et l'image serait
+      # figée sur la configuration du jour de sa construction.
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      SITE_NAME: ${SITE_NAME:-Family Lodge}
+      SITE_TAGLINE: ${SITE_TAGLINE:-Réservations familiales partagées}
+      PROPERTY_LAT: ${PROPERTY_LAT:-45.0}
+      PROPERTY_LNG: ${PROPERTY_LNG:-6.0}
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      # Depuis le conteneur, PUBLIC_URL n'est pas forcément résolvable : les
+      # appels côté serveur passent directement par le proxy interne.
+      SUPABASE_INTERNAL_URL: http://proxy
+
+      NODE_ENV: production
+      CRON_SECRET: ${CRON_SECRET}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_FROM: ${SMTP_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-auto}
+      PLATFORM_OWNER_EMAILS: ${PLATFORM_OWNER_EMAILS:-}
+
+      WEATHER_API_KEY: ${WEATHER_API_KEY:-}
+      WEATHER_LOCATION: ${WEATHER_LOCATION:-}
+      WEATHER_LATITUDE: ${WEATHER_LATITUDE:-}
+      WEATHER_LONGITUDE: ${WEATHER_LONGITUDE:-}
+      WEATHER_ELEVATION: ${WEATHER_ELEVATION:-}
+
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      BASIC_AUTH_ENABLED: ${BASIC_AUTH_ENABLED:-false}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-}
+      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_started
+      storage:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.143
+    restart: unless-stopped
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - db-config:/etc/postgresql-custom
+      # Appliqués une seule fois, à la création du volume de données.
+      # `init-scripts` tourne en superutilisateur, `migrations` après les
+      # migrations internes de l'image Supabase.
+      - ./docker/db/init/01-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - ./docker/db/init/02-schema.sql:/docker-entrypoint-initdb.d/migrations/99-01-schema.sql:ro
+      - ./docker/db/init/03-seed-guide-local.sql:/docker-entrypoint-initdb.d/migrations/99-02-seed.sql:ro
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_DB: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      JWT_EXP: 3600
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      # Sans cela, les sondes de Realtime inondent les journaux.
+      - -c
+      - log_min_messages=fatal
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.192.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${PUBLIC_URL:-http://localhost:3000}
+      GOTRUE_SITE_URL: ${PUBLIC_URL:-http://localhost:3000}
+      GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL:-http://localhost:3000}/**
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+
+      # Les comptes sont créés par l'application (invitation ou premier admin),
+      # jamais par une inscription publique.
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+
+      # Utilisé par « mot de passe oublié » : le lien renvoie vers /set-password.
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /set-password
+      GOTRUE_MAILER_URLPATHS_INVITE: /set-password
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /set-password
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /set-password
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASSWORD:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_FROM:-}
+      GOTRUE_SMTP_SENDER_NAME: Family Booking
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v14.14
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_DB_EXTRA_SEARCH_PATH: public, extensions
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: 3600
+
+  realtime:
+    # Le nom du conteneur n'est pas décoratif : Realtime déduit son locataire du
+    # sous-domaine par lequel on l'appelle.
+    container_name: realtime-dev.supabase-realtime
+    image: public.ecr.aws/supabase/realtime:v2.112.6
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      DISABLE_HEALTHCHECK_LOGGING: "true"
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.62.5
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    volumes:
+      - storage-data:/var/lib/storage
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      POSTGREST_URL: http://rest:3000
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      STORAGE_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      FILE_SIZE_LIMIT: 52428800
+      TENANT_ID: family-booking
+      REGION: local
+      GLOBAL_S3_BUCKET: family-booking
+      # Les images sont servies telles quelles : pas de service de
+      # redimensionnement à faire tourner.
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5000/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  storage-init:
+    image: public.ecr.aws/supabase/postgres:17.6.1.143
+    restart: "no"
+    depends_on:
+      storage:
+        condition: service_healthy
+    volumes:
+      - ./docker/db/init/04-storage.sql:/init/04-storage.sql:ro
+    # Le schéma `storage` est créé par le service Storage lui-même : ses buckets
+    # et leurs règles d'accès ne peuvent donc pas partir avec l'initdb.
+    entrypoint:
+      - psql
+      - postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+      - -v
+      - ON_ERROR_STOP=1
+      - -q
+      - -f
+      - /init/04-storage.sql
+
+volumes:
+  db-data:
+  db-config:
+  storage-data:
